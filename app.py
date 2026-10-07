@@ -31,15 +31,29 @@ def create_chat():
 
 def send_email(to_address, subject, body):
     try:
-        message = MIMEText(body)
-        message["Subject"] = subject
-        message["From"] = GMAIL_ADDRESS
-        message["To"] = to_address
+        clean_password = GMAIL_APP_PASSWORD.replace(" ", "").strip()
+        clean_from = GMAIL_ADDRESS.strip()
+        clean_to = to_address.strip()
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-            server.send_message(message)
-        return True, None
+        message = MIMEText(body, "plain", "utf-8")
+        message["Subject"] = subject
+        message["From"] = clean_from
+        message["To"] = clean_to
+
+        # Try SSL on port 465 first
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as server:
+                server.login(clean_from, clean_password)
+                server.send_message(message)
+            return True, None
+        except Exception:
+            # Fallback to STARTTLS on port 587 (often required on cloud providers)
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(clean_from, clean_password)
+                server.send_message(message)
+            return True, None
     except Exception as error:
         return False, str(error)
 
@@ -104,7 +118,7 @@ with header_col:
     st.title("🥗 MacroSnap")
 
 with button_col:
-    send_disabled = len(st.session_state.messages) <= 2
+    send_disabled = len(st.session_state.messages) <= 1
     if st.button("📧 Send to Email", disabled=send_disabled, use_container_width=True):
         with st.spinner("Summarizing your day..."):
             summary = ask_gemini([SUMMARY_REQUEST_PROMPT])
@@ -152,3 +166,4 @@ if user_input:
     with st.spinner("Crunching the numbers..."):
         answer = ask_gemini(parts)
         add_message("assistant", "text", answer)
+    st.rerun()
